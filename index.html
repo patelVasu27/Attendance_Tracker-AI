@@ -1,0 +1,2057 @@
+﻿<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AttendIQ — Smart College Attendance Tracker</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%23F4DFD8'/%3E%3Cpath d='M8 6v11M12.5 6v11M17 6v11M7 14.5l11-5' stroke='%232A0800' stroke-width='2' stroke-linecap='round' fill='none'/%3E%3C/svg%3E"
+    />
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              /* Brand palette (design tokens are mirrored as CSS vars in :root) */
+              ground: "#2A0800",
+              surface: "#3A180F",
+              raised: "#4A2217",
+              line: "#57301F",
+              control: "#6B3E28",
+              ink: "#F4DFD8",
+              cream: "#F4DFD8",
+              muted: "#C09891",
+              faint: "#A38A83",
+              /* Status system */
+              present: "#9CC88E",
+              presentTint: "#1D2A15",
+              absent: "#E98577",
+              absentTint: "#2E1410",
+              cancelled: "#B7A89E",
+              cancelledTint: "#332A24",
+              late: "#E2B25C",
+              lateTint: "#2A2313",
+              excused: "#97AEDB",
+              excusedTint: "#171E2B",
+              /* Neutral fallbacks */
+              well: "#2F130A",
+            },
+            fontFamily: {
+              sans: ["Inter", "system-ui", "-apple-system", "Segoe UI", "sans-serif"],
+            },
+          },
+        },
+      };
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        /* Brand palette tokens */
+        --tk-ground: #2a0800;
+        --tk-surface: #3a180f;
+        --tk-raised: #4a2217;
+        --tk-line: #57301f;
+        --tk-control: #6b3e28;
+        --tk-ink: #f4dfd8;
+        --tk-muted: #c09891;
+        --tk-faint: #a38a83;
+        /* Status tokens: semantic, fixed */
+        --status-present: #9cc88e; /* attended / on track — green */
+        --status-absent: #e98577; /* missed / at risk — red */
+        --status-cancelled: #b7a89e; /* cancelled class — grey */
+        --status-late: #e2b25c; /* late — amber (reserved) */
+        --status-excused: #97aedb; /* excused — periwinkle (reserved) */
+        /* pending is a dashed neutral chip — no extra hue needed */
+        color-scheme: dark;
+      }
+      ::selection {
+        background: #6b3e28;
+        color: #f4dfd8;
+      }
+      body {
+        font-feature-settings: "tnum" 0;
+      }
+      /* Tabular figures everywhere numbers update or align */
+      .num {
+        font-variant-numeric: tabular-nums;
+      }
+      /* Visible keyboard focus */
+      :focus-visible {
+        outline: 2px solid #f4dfd8;
+        outline-offset: 2px;
+        border-radius: 6px;
+      }
+      button:focus:not(:focus-visible) {
+        outline: none;
+      }
+      /* Drag-over state for the timetable dropzone */
+      #drop-area.drop-active {
+        border-color: #f4dfd8 !important;
+        background: #2f130a;
+      }
+      /* Quiet scrollbar in the palette's tones */
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #2a0800;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #4a2217;
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #6b3e28;
+      }
+      /* Accordion toggles (Settings, Timetable scanner) */
+      .acc-toggle[aria-expanded="true"] .chev {
+        transform: rotate(180deg);
+      }
+      /* Touch devices: keep every control at a 44px tap height */
+      @media (pointer: coarse) {
+        button,
+        input,
+        label[for],
+        a {
+          min-height: 44px;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          transition: none !important;
+          animation: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body
+    class="bg-ground text-ink font-sans min-h-screen flex flex-col antialiased"
+  >
+    <a
+      href="#main"
+      class="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:top-3 focus:left-3 focus:h-9 focus:px-4 focus:inline-flex focus:items-center focus:rounded-full focus:bg-cream focus:text-ground focus:text-sm focus:font-semibold"
+      >Skip to content</a
+    >
+
+    <!-- TOP BAR -->
+    <header class="sticky top-0 z-40 bg-ground border-b border-line">
+      <div
+        class="max-w-6xl mx-auto px-5 h-14 flex items-center justify-between gap-3"
+      >
+        <div class="flex items-center gap-2.5">
+          <div
+            class="h-8 w-8 rounded-lg bg-cream text-ground grid place-items-center shrink-0"
+            aria-hidden="true"
+          >
+            <svg viewBox="0 0 24 24" class="w-[18px] h-[18px]" fill="none" stroke="currentColor">
+              <path
+                stroke-linecap="round"
+                stroke-width="2"
+                d="M8 5.5v12M12.5 5.5v12M17 5.5v12M7 14.5l11-5"
+              />
+            </svg>
+          </div>
+          <span class="text-[17px] font-semibold tracking-tight text-ink"
+            >AttendIQ</span
+          >
+        </div>
+
+        <div class="flex items-center gap-1.5 sm:gap-2">
+          <button
+            id="btn-toggle-config"
+            class="h-9 px-3 rounded-full text-sm text-muted hover:text-ink hover:bg-raised transition inline-flex items-center gap-1.5"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="1.5"
+                d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+              />
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="1.5"
+                d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+              />
+            </svg>
+            <span class="hidden sm:inline">Settings</span>
+          </button>
+
+          <button
+            id="btn-export"
+            title="Export JSON backup"
+            class="h-9 px-3 rounded-full text-sm text-muted hover:text-ink hover:bg-raised transition inline-flex items-center gap-1.5"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="1.5"
+                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
+              />
+            </svg>
+            <span class="hidden sm:inline">Export</span>
+          </button>
+
+          <label
+            title="Import JSON backup"
+            class="h-9 px-3 rounded-full text-sm text-muted hover:text-ink hover:bg-raised cursor-pointer transition inline-flex items-center gap-1.5"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="1.5"
+                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"
+              />
+            </svg>
+            <span class="hidden sm:inline">Import</span>
+            <input type="file" id="file-import" accept=".json" class="sr-only" />
+          </label>
+
+          <button
+            id="btn-open-add-modal"
+            class="h-9 px-3 sm:px-4 rounded-full bg-cream text-ground text-sm font-semibold hover:bg-ink transition inline-flex items-center gap-1.5 ml-1 whitespace-nowrap"
+          >
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M12 4v16m8-8H4"
+              />
+            </svg>
+            <span>Add subject</span>
+          </button>
+        </div>
+      </div>
+    </header>
+    <!-- MAIN -->
+    <main
+      id="main"
+      class="max-w-6xl mx-auto px-5 py-6 w-full flex-1 flex flex-col gap-5"
+    >
+      <!-- TITLE ROW: the screen's finding sits under the title -->
+      <div>
+        <h1 class="text-[22px] font-semibold tracking-[-0.01em] text-ink">
+          Attendance
+        </h1>
+        <p id="summary-overall-detail" class="text-sm text-muted mt-0.5">
+          Add courses to calculate metrics
+        </p>
+      </div>
+
+      <!-- SETTINGS (expandable) -->
+      <section
+        id="config-panel"
+        class="bg-surface rounded-2xl p-5"
+        aria-label="Settings"
+      >
+        <div class="flex items-center justify-between gap-3">
+          <h2 class="text-base font-semibold text-ink">
+            <button
+              type="button"
+              id="btn-config-header"
+              class="acc-toggle inline-flex items-center gap-2"
+              aria-expanded="false"
+              aria-controls="config-body"
+            >
+              <svg
+                class="chev w-4 h-4 text-faint transition-transform"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M6 9l6 6 6-6"
+                />
+              </svg>
+              Settings
+            </button>
+          </h2>
+          <span class="text-xs text-faint">Saved in this browser</span>
+        </div>
+
+        <div id="config-body" class="hidden">
+        <div class="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div class="space-y-1.5">
+            <label
+              for="input-api-key"
+              class="block text-sm text-muted">Gemini API key</label>
+            <div class="relative">
+              <input
+                type="password"
+                id="input-api-key"
+                placeholder="AIzaSy…"
+                class="w-full h-10 rounded-xl bg-raised border border-control px-3.5 text-sm text-ink placeholder:text-faint focus:outline-none focus:border-muted transition"
+              />
+              <button
+                type="button"
+                id="toggle-key-visibility"
+                aria-label="Show or hide API key"
+                class="absolute right-2.5 top-2.5 text-faint hover:text-ink transition"
+              >
+                <svg id="eye-icon" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="1.5"
+                    d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+                  />
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="1.5"
+                    d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
+                  />
+                </svg>
+              </button>
+            </div>
+            <p class="text-[11px] text-faint">
+              Required for timetable AI analysis.
+            </p>
+          </div>
+
+          <div class="space-y-1.5">
+            <label
+              for="input-total-weeks"
+              class="block text-sm text-muted">Total weeks in semester</label>
+            <input
+              type="number"
+              id="input-total-weeks"
+              min="1"
+              max="52"
+              value="15"
+              class="w-full h-10 rounded-xl bg-raised border border-control px-3.5 text-sm text-ink num focus:outline-none focus:border-muted transition"
+            />
+            <p class="text-[11px] text-faint">
+              Multiplies weekly classes into the semester total.
+            </p>
+          </div>
+
+          <div class="space-y-1.5">
+            <label
+              for="input-target-percentage"
+              class="block text-sm text-muted">Target attendance %</label>
+            <div class="relative">
+              <input
+                type="number"
+                id="input-target-percentage"
+                min="1"
+                max="100"
+                value="75"
+                class="w-full h-10 rounded-xl bg-raised border border-control px-3.5 pr-9 text-sm text-ink num focus:outline-none focus:border-muted transition"
+              />
+              <span
+                class="absolute right-3.5 top-2.5 text-sm text-faint">%</span>
+            </div>
+            <p class="text-[11px] text-faint">
+              Threshold for the bunk and catch-up math.
+            </p>
+          </div>
+        </div>
+
+        <div class="mt-5 flex justify-end">
+          <button
+            id="btn-save-settings"
+            class="h-9 px-4 rounded-full bg-raised hover:bg-line text-sm font-medium text-ink transition inline-flex items-center gap-1.5"
+          >
+            Save settings
+          </button>
+        </div>
+        </div>
+      </section>
+
+      <!-- OVERVIEW STRIP: one container split by dividers -->
+      <section
+        id="overall-summary"
+        class="bg-surface rounded-2xl grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4 lg:gap-0 lg:divide-x lg:divide-line p-4 lg:p-2"
+        aria-label="Overview"
+      >
+        <h2 class="sr-only">Overview</h2>
+
+        <!-- Overall gauge -->
+        <div class="sm:col-span-2 lg:col-span-2 flex items-center gap-4 p-3 lg:px-4">
+          <div class="relative shrink-0 grid place-items-center">
+            <svg viewBox="0 0 80 80" class="w-[88px] h-[88px] -rotate-90">
+              <circle
+                cx="40"
+                cy="40"
+                r="34"
+                stroke="currentColor"
+                stroke-width="6"
+                class="text-raised"
+                fill="transparent"
+              />
+              <circle
+                id="summary-circle-bar"
+                cx="40"
+                cy="40"
+                r="34"
+                stroke="currentColor"
+                stroke-width="6"
+                class="text-raised transition-all duration-500"
+                stroke-linecap="round"
+                fill="transparent"
+                stroke-dasharray="213.6"
+                stroke-dashoffset="213.6"
+              />
+            </svg>
+            <span
+              id="summary-overall-pct"
+              class="absolute text-[22px] font-semibold num text-ink">0%</span>
+          </div>
+          <div>
+            <p class="text-xs text-muted">Overall attendance</p>
+            <div
+              id="summary-status-badge"
+              class="mt-1 inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium bg-raised border-line text-faint"
+            >
+              No data
+            </div>
+          </div>
+        </div>
+
+        <!-- Conducted -->
+        <div class="p-3 lg:px-4 lg:py-3">
+          <span class="text-xs text-muted block">Conducted</span>
+          <span
+            id="summary-total-conducted"
+            class="mt-0.5 block text-lg font-medium num text-ink">0</span>
+          <span class="text-[11px] text-faint">Classes so far</span>
+        </div>
+
+        <!-- Attended -->
+        <div class="p-3 lg:px-4 lg:py-3">
+          <span class="text-xs text-muted block">Attended</span>
+          <span
+            id="summary-total-attended"
+            class="mt-0.5 block text-lg font-medium num text-present">0</span>
+          <span class="text-[11px] text-faint">Present</span>
+        </div>
+
+        <!-- Missed -->
+        <div class="p-3 lg:px-4 lg:py-3">
+          <span class="text-xs text-muted block">Missed</span>
+          <span
+            id="summary-total-missed"
+            class="mt-0.5 block text-lg font-medium num text-absent">0</span>
+          <span class="text-[11px] text-faint">Absences</span>
+        </div>
+
+        <!-- Subject health -->
+        <div class="p-3 lg:px-4 lg:py-3">
+          <span class="text-xs text-muted block">Subject health</span>
+          <div class="mt-1 flex items-baseline gap-1.5">
+            <span
+              id="summary-healthy-count"
+              class="text-sm font-medium num text-present">0 Safe</span>
+            <span class="text-faint">/</span>
+            <span
+              id="summary-atrisk-count"
+              class="text-sm font-medium num text-absent">0 Risk</span>
+          </div>
+          <span class="text-[11px] text-faint">
+            Threshold:
+            <span id="summary-target-label" class="num">75%</span>
+          </span>
+        </div>
+      </section>
+
+      <!-- TIMETABLE SCANNER -->
+      <section class="bg-surface rounded-2xl p-5" aria-label="Timetable scanner">
+        <div
+          class="flex flex-col md:flex-row md:items-center justify-between gap-3"
+        >
+          <div>
+            <h2 class="text-base font-semibold text-ink">
+              <button
+                type="button"
+                id="btn-scanner-toggle"
+                class="acc-toggle inline-flex items-center gap-2"
+                aria-expanded="false"
+                aria-controls="scanner-body"
+              >
+                <svg
+                  class="chev w-4 h-4 text-faint transition-transform"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M6 9l6 6 6-6"
+                  />
+                </svg>
+                Timetable scanner
+              </button>
+            </h2>
+            <p class="text-sm text-muted mt-0.5">
+              Upload a photo or screenshot of your weekly schedule — the AI
+              extracts each course and its expected semester load. A successful
+              scan <span class="text-absent">replaces your current course
+              list</span>.
+            </p>
+          </div>
+          <div
+            id="ai-status-indicator"
+            class="hidden items-center gap-2 px-3 py-1.5 rounded-full bg-raised border border-line text-xs text-muted shrink-0"
+          >
+            <svg class="animate-spin w-3.5 h-3.5 text-faint" fill="none" viewBox="0 0 24 24">
+              <circle
+                class="opacity-25"
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                stroke-width="4"
+              />
+              <path
+                class="opacity-75"
+                fill="currentColor"
+                d="M4 12a8 8 0 018-8v8H4z"
+              />
+            </svg>
+            <span id="ai-status-text">Analyzing schedule…</span>
+          </div>
+        </div>
+        <div
+          id="scanner-body"
+          class="hidden mt-4 grid grid-cols-1 lg:grid-cols-3 gap-4 items-stretch"
+        >
+          <!-- Dropzone -->
+          <div class="lg:col-span-2">
+            <label
+              for="timetable-input"
+              id="drop-area"
+              class="block rounded-xl border border-dashed border-control bg-ground hover:border-muted p-6 flex flex-col items-center justify-center cursor-pointer transition text-center group"
+            >
+              <svg
+                class="w-7 h-7 text-faint group-hover:text-muted transition mb-2"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="1.5"
+                  d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                />
+              </svg>
+              <span class="text-sm text-muted group-hover:text-ink transition"
+                >Click to upload or drag &amp; drop your timetable screenshot</span
+              >
+              <span class="text-[11px] text-faint mt-1"
+                >PNG, JPG or WEBP, up to 10&nbsp;MB</span
+              >
+              <input
+                type="file"
+                id="timetable-input"
+                accept="image/*"
+                class="sr-only"
+              />
+            </label>
+          </div>
+
+          <!-- Preview & analyze -->
+          <div
+            class="bg-ground rounded-xl p-3 flex flex-col items-center justify-center min-h-[120px]"
+          >
+            <div
+              id="preview-container"
+              class="hidden w-full flex flex-col items-center gap-2"
+            >
+              <img
+                id="image-preview"
+                src=""
+                alt="Timetable preview"
+                class="max-h-24 max-w-full rounded-lg object-contain"
+              />
+              <div class="flex items-center gap-2 w-full">
+                <button
+                  id="btn-analyze-ai"
+                  class="flex-1 h-9 px-3 rounded-full bg-raised hover:bg-line text-ink text-sm font-medium transition disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-1.5"
+                >
+                  <svg class="w-4 h-4 text-faint" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="1.5"
+                      d="M13 10V3L4 14h7v7l9-11h-7z"
+                    />
+                  </svg>
+                  Extract subjects
+                </button>
+                <button
+                  id="btn-cancel-preview"
+                  title="Remove image"
+                  aria-label="Remove image"
+                  class="h-9 w-9 grid place-items-center rounded-full text-faint hover:text-ink hover:bg-raised transition"
+                >
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="1.5"
+                      d="M6 18L18 6M6 6l12 12"
+                    />
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div
+              id="preview-placeholder"
+              class="py-4 text-center text-xs text-faint"
+            >
+              No image selected yet
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- SUBJECTS HEADER -->
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+        <div class="flex items-center gap-2">
+          <h2 class="text-base font-semibold text-ink">Your courses</h2>
+          <span
+            id="subject-count-badge"
+            class="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-raised text-faint text-[11px] num"
+            >0</span
+          >
+        </div>
+
+        <div class="flex items-center">
+          <div class="relative">
+            <input
+              type="text"
+              id="input-search"
+              placeholder="Search courses…"
+              aria-label="Search courses"
+              class="h-9 w-44 sm:w-64 rounded-full bg-raised border border-control pl-9 pr-3 text-sm text-ink placeholder:text-faint focus:outline-none focus:border-muted transition"
+            />
+            <svg
+              class="w-4 h-4 text-faint absolute left-3 top-2.5 pointer-events-none"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="1.5"
+                d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+              />
+            </svg>
+          </div>
+        </div>
+      </div>
+
+      <!-- SUBJECT CARDS -->
+      <div
+        id="subjects-grid"
+        class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 items-stretch"
+      >
+        <!-- Cards injected here -->
+      </div>
+
+      <!-- EMPTY STATE -->
+      <div
+        id="empty-state"
+        class="hidden rounded-2xl border border-dashed border-control px-6 py-12 text-center"
+      >
+        <h3 class="text-base font-semibold text-ink">No courses configured</h3>
+        <p class="text-sm text-muted max-w-sm mx-auto mt-1">
+          Upload your schedule with the scanner above, or add courses manually
+          to switch the attendance math on.
+        </p>
+        <button
+          id="btn-empty-add"
+          class="mt-5 h-9 px-4 rounded-full border border-control hover:border-muted text-sm font-medium text-ink transition inline-flex items-center"
+        >
+          + Add first subject
+        </button>
+      </div>
+    </main>
+
+    <!-- TOASTS -->
+    <div
+      id="toast-container"
+      class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 max-w-sm w-full pointer-events-none"
+    ></div>
+
+    <!-- MODAL: ADD SUBJECT -->
+    <div
+      id="modal-add"
+      class="fixed inset-0 z-50 bg-ground/80 flex items-center justify-center p-4 hidden"
+    >
+      <div
+        class="bg-surface border border-line rounded-2xl w-full max-w-md p-6 shadow-2xl"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modal-add-title"
+      >
+        <div class="flex items-center justify-between gap-3">
+          <h3 id="modal-add-title" class="text-base font-semibold text-ink">
+            Add subject
+          </h3>
+          <button
+            class="modal-close h-9 w-9 grid place-items-center rounded-full text-faint hover:text-ink hover:bg-raised transition -mr-2"
+            aria-label="Close"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="1.5"
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
+        </div>
+
+        <form id="form-add-subject" class="mt-5 space-y-4">
+          <div>
+            <label
+              for="add-subject-name"
+              class="block text-sm text-muted mb-1.5">Subject name</label>
+            <input
+              type="text"
+              id="add-subject-name"
+              required
+              placeholder="e.g. Distributed Systems"
+              class="w-full h-10 rounded-xl bg-raised border border-control px-3.5 text-sm text-ink placeholder:text-faint focus:outline-none focus:border-muted transition"
+            />
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label
+                for="add-subject-weekly"
+                class="block text-sm text-muted mb-1.5">Classes / week</label>
+              <input
+                type="number"
+                id="add-subject-weekly"
+                min="1"
+                max="50"
+                value="4"
+                required
+                class="w-full h-10 rounded-xl bg-raised border border-control px-3.5 text-sm text-ink num focus:outline-none focus:border-muted transition"
+              />
+            </div>
+            <div>
+              <label
+                for="add-subject-expected"
+                class="block text-sm text-muted mb-1.5">Semester total</label>
+              <input
+                type="number"
+                id="add-subject-expected"
+                min="1"
+                max="500"
+                value="60"
+                required
+                class="w-full h-10 rounded-xl bg-raised border border-control px-3.5 text-sm text-ink num focus:outline-none focus:border-muted transition"
+              />
+            </div>
+          </div>
+
+          <p class="text-[11px] text-faint">
+            Semester total defaults to weekly classes &times; total weeks.
+          </p>
+
+          <div class="pt-3 border-t border-line flex justify-end gap-2">
+            <button
+              type="button"
+              class="modal-close h-9 px-4 rounded-full bg-raised hover:bg-line text-sm text-ink transition"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              class="h-9 px-4 rounded-full bg-cream text-ground text-sm font-semibold hover:bg-ink transition"
+            >
+              Add subject
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- MODAL: EDIT SUBJECT -->
+    <div
+      id="modal-edit"
+      class="fixed inset-0 z-50 bg-ground/80 flex items-center justify-center p-4 hidden"
+    >
+      <div
+        class="bg-surface border border-line rounded-2xl w-full max-w-md p-6 shadow-2xl"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modal-edit-title"
+      >
+        <div class="flex items-center justify-between gap-3">
+          <h3 id="modal-edit-title" class="text-base font-semibold text-ink">
+            Edit course
+          </h3>
+          <button
+            class="modal-close h-9 w-9 grid place-items-center rounded-full text-faint hover:text-ink hover:bg-raised transition -mr-2"
+            aria-label="Close"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="1.5"
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
+        </div>
+
+        <form id="form-edit-subject" class="mt-5 space-y-4">
+          <input type="hidden" id="edit-subject-id" />
+          <div>
+            <label
+              for="edit-subject-name"
+              class="block text-sm text-muted mb-1.5">Subject name</label>
+            <input
+              type="text"
+              id="edit-subject-name"
+              required
+              class="w-full h-10 rounded-xl bg-raised border border-control px-3.5 text-sm text-ink focus:outline-none focus:border-muted transition"
+            />
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label
+                for="edit-subject-weekly"
+                class="block text-sm text-muted mb-1.5">Classes / week</label>
+              <input
+                type="number"
+                id="edit-subject-weekly"
+                min="1"
+                max="50"
+                required
+                class="w-full h-10 rounded-xl bg-raised border border-control px-3.5 text-sm text-ink num focus:outline-none focus:border-muted transition"
+              />
+            </div>
+            <div>
+              <label
+                for="edit-subject-expected"
+                class="block text-sm text-muted mb-1.5">Semester target total</label>
+              <input
+                type="number"
+                id="edit-subject-expected"
+                min="1"
+                max="500"
+                required
+                class="w-full h-10 rounded-xl bg-raised border border-control px-3.5 text-sm text-ink num focus:outline-none focus:border-muted transition"
+              />
+            </div>
+          </div>
+
+          <div class="grid grid-cols-3 gap-3 pt-2 border-t border-line">
+            <div>
+              <label
+                for="edit-subject-attended"
+                class="block text-xs text-present mb-1.5">Attended</label>
+              <input
+                type="number"
+                id="edit-subject-attended"
+                min="0"
+                required
+                class="w-full h-10 rounded-xl bg-raised border border-control px-3 text-sm text-ink num focus:outline-none focus:border-muted transition"
+              />
+            </div>
+            <div>
+              <label
+                for="edit-subject-missed"
+                class="block text-xs text-absent mb-1.5">Missed</label>
+              <input
+                type="number"
+                id="edit-subject-missed"
+                min="0"
+                required
+                class="w-full h-10 rounded-xl bg-raised border border-control px-3 text-sm text-ink num focus:outline-none focus:border-muted transition"
+              />
+            </div>
+            <div>
+              <label
+                for="edit-subject-cancelled"
+                class="block text-xs text-muted mb-1.5">Cancelled</label>
+              <input
+                type="number"
+                id="edit-subject-cancelled"
+                min="0"
+                required
+                class="w-full h-10 rounded-xl bg-raised border border-control px-3 text-sm text-ink num focus:outline-none focus:border-muted transition"
+              />
+            </div>
+          </div>
+
+          <div
+            class="pt-4 border-t border-line flex justify-between items-center gap-2"
+          >
+            <button
+              type="button"
+              id="btn-delete-subject"
+              class="h-9 px-3.5 rounded-full border border-absent/40 hover:bg-absentTint text-sm font-medium text-absent transition inline-flex items-center gap-1.5 self-start"
+            >
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="1.5"
+                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                />
+              </svg>
+              Delete
+            </button>
+            <div class="flex gap-2">
+              <button
+                type="button"
+                class="modal-close h-9 px-4 rounded-full bg-raised hover:bg-line text-sm text-ink transition"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                class="h-9 px-4 rounded-full bg-cream text-ground text-sm font-semibold hover:bg-ink transition"
+              >
+                Save changes
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+    <!-- ATTENDANCE LOGIC (unchanged) + redesigned render templates -->
+    <script>
+      // --- STATE MANAGEMENT ---
+      const STORAGE_KEY = "attend_iq_master_state_v2";
+
+      const defaultState = {
+        settings: {
+          apiKey: "",
+          totalWeeks: 15,
+          targetPercentage: 75,
+        },
+        subjects: [
+          {
+            id: "sub_init_1",
+            name: "Computer Networks",
+            weeklyClasses: 4,
+            expectedTotal: 60,
+            attended: 14,
+            missed: 2,
+            cancelled: 1,
+          },
+          {
+            id: "sub_init_2",
+            name: "Operating Systems",
+            weeklyClasses: 4,
+            expectedTotal: 60,
+            attended: 8,
+            missed: 6,
+            cancelled: 0,
+          },
+          {
+            id: "sub_init_3",
+            name: "Database Management Systems",
+            weeklyClasses: 3,
+            expectedTotal: 45,
+            attended: 12,
+            missed: 0,
+            cancelled: 2,
+          },
+        ],
+      };
+
+      let state = loadState();
+      let currentUploadedImageBase64 = null;
+      let currentUploadedMimeType = null;
+      let searchTerm = "";
+
+      function loadState() {
+        try {
+          const stored = localStorage.getItem(STORAGE_KEY);
+          if (stored) {
+            const parsed = JSON.parse(stored);
+            return {
+              settings: {
+                ...defaultState.settings,
+                ...(parsed.settings || {}),
+              },
+              subjects: Array.isArray(parsed.subjects) ? parsed.subjects : [],
+            };
+          }
+        } catch (e) {
+          console.error("Error reading localStorage", e);
+        }
+        return JSON.parse(JSON.stringify(defaultState));
+      }
+
+      function saveState() {
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        } catch (e) {
+          showToast("Error saving data to local storage", "error");
+        }
+        render();
+      }
+
+      // --- MATH & ENGINE CALCULATIONS ---
+      function calculateSubjectMetrics(sub, targetPct) {
+        const attended = Number(sub.attended) || 0;
+        const missed = Number(sub.missed) || 0;
+        const cancelled = Number(sub.cancelled) || 0;
+        const expectedTotal = Number(sub.expectedTotal) || 0;
+
+        const classesConducted = attended + missed;
+        const revisedTotal = Math.max(
+          classesConducted,
+          expectedTotal - cancelled,
+        );
+        const currentPercentage =
+          classesConducted === 0 ? 100 : (attended / classesConducted) * 100;
+
+        const T = targetPct / 100;
+        const isSafe = currentPercentage >= targetPct;
+
+        let bunkSafeCount = 0;
+        let catchUpCount = 0;
+        let impossibleToCatchUp = false;
+
+        if (isSafe) {
+          if (T <= 0) {
+            bunkSafeCount = 999;
+          } else {
+            bunkSafeCount = Math.floor(attended / T - classesConducted);
+            if (bunkSafeCount < 0) bunkSafeCount = 0;
+          }
+        } else {
+          if (T >= 1) {
+            impossibleToCatchUp = true;
+          } else {
+            const needed = Math.ceil(
+              (T * classesConducted - attended) / (1 - T),
+            );
+            catchUpCount = Math.max(1, needed);
+          }
+        }
+
+        const remainingClassesInSemester = Math.max(
+          0,
+          revisedTotal - classesConducted,
+        );
+        const maxMissesAllowedEntireSemester = Math.floor(
+          revisedTotal * (1 - T),
+        );
+        const remainingMargin = maxMissesAllowedEntireSemester - missed;
+
+        return {
+          attended,
+          missed,
+          cancelled,
+          expectedTotal,
+          classesConducted,
+          revisedTotal,
+          currentPercentage,
+          isSafe,
+          bunkSafeCount,
+          catchUpCount,
+          impossibleToCatchUp,
+          remainingClassesInSemester,
+          remainingMargin,
+        };
+      }
+
+      function calculateOverallSummary() {
+        const targetPct = Number(state.settings.targetPercentage) || 75;
+        let totalAttended = 0;
+        let totalMissed = 0;
+        let safeCount = 0;
+        let riskCount = 0;
+
+        state.subjects.forEach((sub) => {
+          const m = calculateSubjectMetrics(sub, targetPct);
+          totalAttended += m.attended;
+          totalMissed += m.missed;
+          if (m.isSafe) safeCount++;
+          else riskCount++;
+        });
+
+        const totalConducted = totalAttended + totalMissed;
+        const overallPercentage =
+          totalConducted === 0 ? 100 : (totalAttended / totalConducted) * 100;
+
+        return {
+          totalAttended,
+          totalMissed,
+          totalConducted,
+          overallPercentage,
+          safeCount,
+          riskCount,
+          targetPct,
+        };
+      }
+
+      // --- UI RENDER SYSTEM ---
+      function render() {
+        // 1. Settings inputs update
+        document.getElementById("input-api-key").value =
+          state.settings.apiKey || "";
+        document.getElementById("input-total-weeks").value =
+          state.settings.totalWeeks;
+        document.getElementById("input-target-percentage").value =
+          state.settings.targetPercentage;
+        document.getElementById("summary-target-label").innerText =
+          `${state.settings.targetPercentage}%`;
+
+        // 2. Render Overall Summary
+        const summary = calculateOverallSummary();
+        document.getElementById("summary-total-conducted").innerText =
+          summary.totalConducted;
+        document.getElementById("summary-total-attended").innerText =
+          summary.totalAttended;
+        document.getElementById("summary-total-missed").innerText =
+          summary.totalMissed;
+        document.getElementById("summary-healthy-count").innerText =
+          `${summary.safeCount} Safe`;
+        document.getElementById("summary-atrisk-count").innerText =
+          `${summary.riskCount} Risk`;
+
+        const pctDisplay = `${summary.overallPercentage.toFixed(1)}%`;
+        document.getElementById("summary-overall-pct").innerText =
+          summary.totalConducted === 0 ? "100%" : pctDisplay;
+
+        // Gauge bar (circumference: 2 * Math.PI * 34 ≈ 213.6)
+        const circleBar = document.getElementById("summary-circle-bar");
+        const circumference = 213.6;
+        const pctClamped = Math.min(
+          100,
+          Math.max(0, summary.overallPercentage),
+        );
+        const offset = circumference - (pctClamped / 100) * circumference;
+        circleBar.style.strokeDashoffset = offset;
+
+        const badge = document.getElementById("summary-status-badge");
+        const detail = document.getElementById("summary-overall-detail");
+        if (state.subjects.length === 0) {
+          badge.className =
+            "mt-1 inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium bg-raised border-line text-faint";
+          badge.innerText = "No courses";
+          circleBar.className.baseVal =
+            "text-raised transition-all duration-500";
+          detail.innerText = "Add courses to calculate metrics";
+        } else if (summary.overallPercentage >= summary.targetPct) {
+          badge.className =
+            "mt-1 inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium bg-presentTint border-present/30 text-present";
+          badge.innerText = "On track";
+          circleBar.className.baseVal =
+            "text-present transition-all duration-500";
+          detail.innerText = `Exceeding target by ${(summary.overallPercentage - summary.targetPct).toFixed(1)}%`;
+        } else {
+          badge.className =
+            "mt-1 inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium bg-absentTint border-absent/30 text-absent";
+          badge.innerText = "Attention required";
+          circleBar.className.baseVal =
+            "text-absent transition-all duration-500";
+          detail.innerText = `Lagging target by ${(summary.targetPct - summary.overallPercentage).toFixed(1)}%`;
+        }
+
+        // 3. Render Subject Grid
+        const grid = document.getElementById("subjects-grid");
+        const emptyState = document.getElementById("empty-state");
+        document.getElementById("subject-count-badge").innerText =
+          state.subjects.length;
+
+        const filtered = state.subjects.filter((s) =>
+          s.name.toLowerCase().includes(searchTerm.toLowerCase()),
+        );
+
+        if (state.subjects.length === 0) {
+          grid.innerHTML = "";
+          emptyState.classList.remove("hidden");
+        } else if (filtered.length === 0) {
+          emptyState.classList.add("hidden");
+          grid.innerHTML = `
+          <div class="col-span-full rounded-2xl border border-dashed border-control py-10 px-6 text-center text-sm text-faint">
+            No courses matching &ldquo;${searchTerm}&rdquo;
+          </div>
+        `;
+        } else {
+          emptyState.classList.add("hidden");
+          grid.innerHTML = filtered
+            .map((sub) => renderSubjectCard(sub, summary.targetPct))
+            .join("");
+        }
+      }
+      function renderSubjectCard(sub, targetPct) {
+        const m = calculateSubjectMetrics(sub, targetPct);
+        const isOverTarget = m.isSafe;
+        const pctFormatted = m.currentPercentage.toFixed(1);
+
+        // Status colour tags (attended = green, absent = red)
+        const progressBg = isOverTarget ? "bg-present" : "bg-absent";
+        const pctColor = isOverTarget ? "text-present" : "text-absent";
+        const pill = isOverTarget
+          ? "bg-presentTint text-present"
+          : "bg-absentTint text-absent";
+
+        // Status advisory
+        let advisoryHtml = "";
+        if (isOverTarget) {
+          advisoryHtml = `
+          <div class="mt-3 rounded-xl px-3 py-2.5 bg-presentTint" role="status">
+            <p class="text-xs leading-relaxed text-present">
+              <span class="font-semibold">Safe zone:</span>
+              <span class="ml-1">You can skip the next <strong class="font-semibold num text-ink">${m.bunkSafeCount}</strong> ${m.bunkSafeCount === 1 ? "class" : "consecutive classes"}.</span>
+            </p>
+          </div>
+        `;
+        } else if (m.impossibleToCatchUp) {
+          advisoryHtml = `
+          <div class="mt-3 rounded-xl px-3 py-2.5 bg-absentTint" role="alert">
+            <p class="text-xs leading-relaxed text-absent">
+              <span class="font-semibold">Critical alert:</span>
+              <span class="ml-1">Cannot reach the target due to missed classes already recorded.</span>
+            </p>
+          </div>
+        `;
+        } else {
+          advisoryHtml = `
+          <div class="mt-3 rounded-xl px-3 py-2.5 bg-absentTint" role="alert">
+            <p class="text-xs leading-relaxed text-absent">
+              <span class="font-semibold">Danger zone:</span>
+              <span class="ml-1">You must attend the next <strong class="font-semibold num text-ink">${m.catchUpCount}</strong> ${m.catchUpCount === 1 ? "class" : "consecutive classes"} without missing.</span>
+            </p>
+          </div>
+        `;
+        }
+
+        // Semester margin line
+        let semesterMarginLabel = "Semester buffer";
+        let semesterMarginValue = "";
+        let semesterMarginColor = "text-present";
+        if (m.remainingMargin > 0) {
+          semesterMarginValue = `Max ${m.remainingMargin} bunk${m.remainingMargin === 1 ? "" : "s"} left (${m.remainingClassesInSemester} remaining)`;
+          semesterMarginColor = "text-present";
+        } else if (m.remainingMargin === 0) {
+          semesterMarginValue = `Zero margin left (must attend all ${m.remainingClassesInSemester})`;
+          semesterMarginColor = "text-late";
+        } else {
+          const potentialAttended = m.attended + m.remainingClassesInSemester;
+          const maxFinalPct = (
+            (potentialAttended / m.revisedTotal) *
+            100
+          ).toFixed(1);
+          semesterMarginLabel = "Semester deficit";
+          semesterMarginValue = `Max possible final: ${maxFinalPct}%`;
+          semesterMarginColor = "text-absent";
+        }
+
+        return `
+        <article class="bg-surface rounded-2xl p-5 flex flex-col">
+          <!-- Header -->
+          <div class="flex items-start justify-between gap-2">
+            <div class="min-w-0">
+              <h3 class="text-[15px] font-semibold text-ink truncate" title="${escapeHtml(sub.name)}">${escapeHtml(sub.name)}</h3>
+              <p class="mt-0.5 text-xs text-faint num">${sub.weeklyClasses} /wk &middot; ${sub.expectedTotal} this semester</p>
+            </div>
+            <button onclick="openEditModal('${sub.id}')" aria-label="Edit course" title="Edit course" class="shrink-0 -mt-1 -mr-2 h-9 w-9 grid place-items-center rounded-full text-faint hover:text-ink hover:bg-raised transition">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg>
+            </button>
+          </div>
+
+          <!-- Percentage + progress -->
+          <div class="mt-3">
+            <div class="flex items-end justify-between gap-3">
+              <span class="text-[28px] font-medium leading-none num ${pctColor}">${pctFormatted}<span class="text-base text-faint">%</span></span>
+              <span class="text-xs text-faint num">target ${targetPct}%</span>
+            </div>
+            <div class="relative mt-2.5">
+              <div class="h-1.5 rounded-full bg-raised overflow-hidden">
+                <div class="h-full rounded-full ${progressBg} transition-all duration-300" style="width: ${Math.min(100, Math.max(0, m.currentPercentage))}%"></div>
+              </div>
+              <div class="absolute -top-1 -bottom-1 w-px bg-cream" style="left: ${targetPct}%" title="Target: ${targetPct}%"></div>
+            </div>
+          </div>
+
+          <!-- Counts -->
+          <div class="mt-3 grid grid-cols-5 gap-1 text-center">
+            <div>
+              <span class="block text-[11px] text-faint">Attended</span>
+              <span class="mt-0.5 block text-sm font-medium num text-present">${m.attended}</span>
+            </div>
+            <div>
+              <span class="block text-[11px] text-faint">Missed</span>
+              <span class="mt-0.5 block text-sm font-medium num text-absent">${m.missed}</span>
+            </div>
+            <div>
+              <span class="block text-[11px] text-faint">Total</span>
+              <span class="mt-0.5 block text-sm font-medium num text-ink">${m.classesConducted}</span>
+            </div>
+            <div>
+              <span class="block text-[11px] text-faint">Cancelled</span>
+              <span class="mt-0.5 block text-sm font-medium num text-cancelled">${m.cancelled}</span>
+            </div>
+            <div>
+              <span class="block text-[11px] text-faint">Revised</span>
+              <span class="mt-0.5 block text-sm font-medium num text-ink">${m.revisedTotal}</span>
+            </div>
+          </div>
+
+          <!-- Advisory -->
+          ${advisoryHtml}
+
+          <!-- Semester margin -->
+          <p class="mt-2.5 flex items-center justify-between gap-3 text-xs">
+            <span class="text-faint shrink-0">${semesterMarginLabel}</span>
+            <span class="num ${semesterMarginColor}">${semesterMarginValue}</span>
+          </p>
+
+          <!-- Counters -->
+          <div class="mt-auto pt-4">
+            <div class="border-t border-line pt-3">
+              <div class="grid grid-cols-3 gap-2">
+                <button onclick="updateCounter('${sub.id}', 'attended', 1)" class="h-9 rounded-full bg-raised hover:bg-line text-sm text-ink font-medium transition active:scale-[0.98] flex items-center justify-center gap-2">
+                  <span class="w-1.5 h-1.5 rounded-full bg-present" aria-hidden="true"></span>Attended
+                </button>
+                <button onclick="updateCounter('${sub.id}', 'missed', 1)" class="h-9 rounded-full bg-raised hover:bg-line text-sm text-ink font-medium transition active:scale-[0.98] flex items-center justify-center gap-2">
+                  <span class="w-1.5 h-1.5 rounded-full bg-absent" aria-hidden="true"></span>Missed
+                </button>
+                <button onclick="updateCounter('${sub.id}', 'cancelled', 1)" class="h-9 rounded-full bg-raised hover:bg-line text-sm text-ink font-medium transition active:scale-[0.98] flex items-center justify-center gap-2">
+                  <span class="w-1.5 h-1.5 rounded-full bg-cancelled" aria-hidden="true"></span>Cancelled
+                </button>
+              </div>
+
+              <div class="mt-1.5 grid grid-cols-3 gap-2">
+                <button onclick="updateCounter('${sub.id}', 'attended', -1)" ${m.attended <= 0 ? "disabled" : ""} class="h-8 rounded-full text-xs num text-faint hover:text-present hover:bg-raised disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-faint transition flex items-center justify-center">
+                  <span>- Attended</span>
+                </button>
+                <button onclick="updateCounter('${sub.id}', 'missed', -1)" ${m.missed <= 0 ? "disabled" : ""} class="h-8 rounded-full text-xs num text-faint hover:text-absent hover:bg-raised disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-faint transition flex items-center justify-center">
+                  <span>- Missed</span>
+                </button>
+                <button onclick="updateCounter('${sub.id}', 'cancelled', -1)" ${m.cancelled <= 0 ? "disabled" : ""} class="h-8 rounded-full text-xs num text-faint hover:text-cancelled hover:bg-raised disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-faint transition flex items-center justify-center">
+                  <span>- Cancelled</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </article>
+      `;
+      }
+      // --- COUNTER ACTION DISPATCHER ---
+      function updateCounter(subjectId, field, delta) {
+        const sub = state.subjects.find((s) => s.id === subjectId);
+        if (!sub) return;
+
+        const current = Number(sub[field]) || 0;
+        const next = current + delta;
+        if (next < 0) return; // Prevent negative numbers
+
+        sub[field] = next;
+        saveState();
+      }
+
+      // --- GEMINI VISION API INTEGRATION ---
+      async function analyzeTimetableImage() {
+        const apiKey = state.settings.apiKey.trim();
+        if (!apiKey) {
+          showToast(
+            "Please provide your Gemini API Key in Settings first",
+            "warning",
+          );
+          // Reveal the collapsible settings body so the key field is reachable
+          document.getElementById("config-body").classList.remove("hidden");
+          document
+            .querySelectorAll('[aria-controls="config-body"]')
+            .forEach((b) => b.setAttribute("aria-expanded", "true"));
+          document
+            .getElementById("config-panel")
+            .scrollIntoView({ behavior: "smooth" });
+          document.getElementById("input-api-key").focus();
+          return;
+        }
+
+        if (!currentUploadedImageBase64) {
+          showToast("Please select or drag a timetable image first", "warning");
+          // Reveal the collapsible scanner body so the dropzone is reachable
+          document.getElementById("scanner-body").classList.remove("hidden");
+          document
+            .getElementById("btn-scanner-toggle")
+            .setAttribute("aria-expanded", "true");
+          return;
+        }
+
+        const statusBadge = document.getElementById("ai-status-indicator");
+        const statusText = document.getElementById("ai-status-text");
+        const btnAnalyze = document.getElementById("btn-analyze-ai");
+
+        statusBadge.classList.remove("hidden");
+        statusBadge.classList.add("flex");
+        statusText.innerText = "Calling Gemini Vision…";
+        btnAnalyze.disabled = true;
+        btnAnalyze.classList.add("opacity-50", "cursor-not-allowed");
+
+        const promptText =
+          'Analyze this college timetable. Extract all unique subjects/courses. Count how many times each subject occurs per week. Return ONLY a valid JSON array of objects with this exact structure: [{"subject": "Subject Name", "weeklyClasses": number}]. Do not include markdown formatting or backticks in the response.';
+
+        const payload = {
+          contents: [
+            {
+              parts: [
+                { text: promptText },
+                {
+                  inline_data: {
+                    mime_type: currentUploadedMimeType || "image/jpeg",
+                    data: currentUploadedImageBase64,
+                  },
+                },
+              ],
+            },
+          ],
+        };
+
+        const GEMINI_MODELS = [
+          "gemini-flash-latest", // primary (as before)
+          "gemini-2.5-flash", // substitutes when the primary is overloaded
+          "gemini-2.0-flash",
+          "gemini-flash-lite-latest",
+          "gemini-2.5-flash-lite",
+          "gemini-2.0-flash-lite",
+        ];
+
+        try {
+          let parsedCourses = null;
+          let lastError = null;
+
+          // Try each substitute model until one answers with usable output.
+          for (const model of GEMINI_MODELS) {
+            try {
+              statusText.innerText = `Calling ${model}…`;
+              const response = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+                {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify(payload),
+                },
+              );
+
+              if (!response.ok) {
+                const errData = await response.json().catch(() => ({}));
+                throw new Error(
+                  errData.error?.message ||
+                    `HTTP ${response.status}: ${response.statusText}`,
+                );
+              }
+
+              const data = await response.json();
+              const candidate = data.candidates?.[0];
+              if (
+                !candidate ||
+                !candidate.content ||
+                !candidate.content.parts ||
+                !candidate.content.parts[0]
+              ) {
+                throw new Error(
+                  "Gemini did not return readable course output.",
+                );
+              }
+
+              let rawResponseText = candidate.content.parts[0].text || "";
+
+              // Strip markdown code fences (```json or ```)
+              rawResponseText = rawResponseText
+                .replace(/```json/gi, "")
+                .replace(/```/g, "")
+                .trim();
+
+              let extractedCourses = [];
+              try {
+                extractedCourses = JSON.parse(rawResponseText);
+              } catch (jsonErr) {
+                console.error(
+                  `Failed to parse ${model} response as JSON:`,
+                  rawResponseText,
+                );
+                throw new Error("Failed to parse AI output into valid JSON.");
+              }
+
+              if (
+                !Array.isArray(extractedCourses) ||
+                extractedCourses.length === 0
+              ) {
+                throw new Error(
+                  "No valid subject objects found in timetable image.",
+                );
+              }
+
+              parsedCourses = extractedCourses;
+              break; // a model succeeded
+            } catch (modelErr) {
+              lastError = modelErr;
+              console.warn(
+                `Model ${model} failed, trying the next substitute:`,
+                modelErr.message,
+              );
+            }
+          }
+
+          if (!parsedCourses) {
+            throw new Error(
+              (lastError && lastError.message) ||
+                "All Gemini models are unavailable right now.",
+            );
+          }
+
+          const extractedCourses = parsedCourses;
+          const totalWeeks = Number(state.settings.totalWeeks) || 15;
+
+          // Deduplicate the extracted list (case-insensitive), then replace
+          // the current course list entirely — previous subjects are
+          // auto-deleted when the scanner produces a new timetable.
+          const seen = new Set();
+          const freshCourses = [];
+          extractedCourses.forEach((item) => {
+            if (!item.subject) return;
+            const name = String(item.subject).trim();
+            if (!name) return;
+            const key = name.toLowerCase();
+            if (seen.has(key)) return;
+            seen.add(key);
+            const weekly = Number(item.weeklyClasses) || 1;
+            freshCourses.push({
+              id:
+                "sub_" +
+                Date.now() +
+                "_" +
+                Math.random().toString(36).substr(2, 5),
+              name: name,
+              weeklyClasses: weekly,
+              expectedTotal: weekly * totalWeeks,
+              attended: 0,
+              missed: 0,
+              cancelled: 0,
+            });
+          });
+
+          if (freshCourses.length === 0) {
+            throw new Error(
+              "No valid subject objects found in timetable image.",
+            );
+          }
+
+          const previousCount = state.subjects.length;
+          state.subjects = freshCourses;
+
+          saveState();
+          showToast(
+            previousCount > 0
+              ? `Timetable applied: ${previousCount} previous course${previousCount === 1 ? "" : "s"} deleted, ${freshCourses.length} added.`
+              : `Timetable applied: ${freshCourses.length} course${freshCourses.length === 1 ? "" : "s"} added.`,
+            "success",
+          );
+          clearImageUpload();
+        } catch (err) {
+          console.error("Gemini API Error:", err);
+          showToast(
+            `AI Analysis Failed: ${err.message} (all substitute models tried)`,
+            "error",
+          );
+        } finally {
+          statusBadge.classList.add("hidden");
+          statusBadge.classList.remove("flex");
+          btnAnalyze.disabled = false;
+          btnAnalyze.classList.remove("opacity-50", "cursor-not-allowed");
+        }
+      }
+
+      // --- IMAGE FILE HANDLING ---
+      function handleImageFile(file) {
+        if (!file || !file.type.startsWith("image/")) {
+          showToast("Please provide a valid image file", "warning");
+          return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = function (e) {
+          const fullDataUrl = e.target.result;
+          // Split data URL to extract mime type and base64
+          const parts = fullDataUrl.split(",");
+          if (parts.length === 2) {
+            currentUploadedMimeType = parts[0].match(/:(.*?);/)[1];
+            currentUploadedImageBase64 = parts[1];
+
+            document.getElementById("image-preview").src = fullDataUrl;
+            document
+              .getElementById("preview-placeholder")
+              .classList.add("hidden");
+            document
+              .getElementById("preview-container")
+              .classList.remove("hidden");
+          }
+        };
+        reader.onerror = function () {
+          showToast("Failed to read image file", "error");
+        };
+        reader.readAsDataURL(file);
+      }
+
+      function clearImageUpload() {
+        currentUploadedImageBase64 = null;
+        currentUploadedMimeType = null;
+        document.getElementById("timetable-input").value = "";
+        document.getElementById("image-preview").src = "";
+        document
+          .getElementById("preview-placeholder")
+          .classList.remove("hidden");
+        document.getElementById("preview-container").classList.add("hidden");
+      }
+
+      // --- MODAL HANDLING & SUBJECT CRUD ---
+      function openAddModal() {
+        const totalWeeks = Number(state.settings.totalWeeks) || 15;
+        const weekly = 4;
+        document.getElementById("add-subject-name").value = "";
+        document.getElementById("add-subject-weekly").value = weekly;
+        document.getElementById("add-subject-expected").value =
+          weekly * totalWeeks;
+        document.getElementById("modal-add").classList.remove("hidden");
+        document.getElementById("add-subject-name").focus();
+      }
+
+      function openEditModal(subjectId) {
+        const sub = state.subjects.find((s) => s.id === subjectId);
+        if (!sub) return;
+
+        document.getElementById("edit-subject-id").value = sub.id;
+        document.getElementById("edit-subject-name").value = sub.name;
+        document.getElementById("edit-subject-weekly").value =
+          sub.weeklyClasses;
+        document.getElementById("edit-subject-expected").value =
+          sub.expectedTotal;
+        document.getElementById("edit-subject-attended").value = sub.attended;
+        document.getElementById("edit-subject-missed").value = sub.missed;
+        document.getElementById("edit-subject-cancelled").value = sub.cancelled;
+
+        document.getElementById("modal-edit").classList.remove("hidden");
+        document.getElementById("edit-subject-name").focus();
+      }
+
+      function closeAllModals() {
+        document
+          .querySelectorAll("#modal-add, #modal-edit")
+          .forEach((m) => m.classList.add("hidden"));
+      }
+
+      // --- BACKUP & RESTORE (EXPORT / IMPORT) ---
+      function exportBackup() {
+        const exportData = {
+          version: "attend_iq_v2",
+          exportedAt: new Date().toISOString(),
+          settings: state.settings,
+          subjects: state.subjects,
+        };
+
+        const dataStr =
+          "data:text/json;charset=utf-8," +
+          encodeURIComponent(JSON.stringify(exportData, null, 2));
+        const downloadAnchor = document.createElement("a");
+        downloadAnchor.setAttribute("href", dataStr);
+        downloadAnchor.setAttribute(
+          "download",
+          `AttendIQ_Backup_${new Date().toISOString().slice(0, 10)}.json`,
+        );
+        document.body.appendChild(downloadAnchor);
+        downloadAnchor.click();
+        downloadAnchor.remove();
+        showToast("Attendance backup exported successfully!", "success");
+      }
+
+      function importBackup(file) {
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function (e) {
+          try {
+            const imported = JSON.parse(e.target.result);
+            if (!imported || !Array.isArray(imported.subjects)) {
+              throw new Error("Invalid JSON structure: Missing subjects array");
+            }
+
+            state.settings = {
+              ...defaultState.settings,
+              ...(imported.settings || {}),
+            };
+            state.subjects = imported.subjects.map((s) => ({
+              id:
+                s.id ||
+                "sub_" +
+                  Date.now() +
+                  "_" +
+                  Math.random().toString(36).substr(2, 5),
+              name: String(s.name || "Unnamed Course"),
+              weeklyClasses: Number(s.weeklyClasses) || 1,
+              expectedTotal: Number(s.expectedTotal) || 45,
+              attended: Number(s.attended) || 0,
+              missed: Number(s.missed) || 0,
+              cancelled: Number(s.cancelled) || 0,
+            }));
+
+            saveState();
+            showToast(
+              `Successfully restored ${state.subjects.length} subjects!`,
+              "success",
+            );
+          } catch (err) {
+            console.error(err);
+            showToast("Failed to import JSON: Invalid file format", "error");
+          }
+        };
+        reader.readAsText(file);
+      }
+
+      // --- TOAST NOTIFICATIONS ---
+      function showToast(message, type = "info") {
+        const container = document.getElementById("toast-container");
+        const toast = document.createElement("div");
+        toast.className =
+          "pointer-events-auto transform transition-all duration-300 ease-out translate-y-2 opacity-0 p-3 rounded-xl border bg-raised shadow-xl text-xs font-medium flex items-center gap-2 text-ink";
+
+        if (type === "success") {
+          toast.classList.add("border-present/30");
+          toast.innerHTML = `<svg class="w-4 h-4 text-present shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M5 13l4 4L19 7"/></svg><span>${escapeHtml(message)}</span>`;
+        } else if (type === "error") {
+          toast.classList.add("border-absent/30");
+          toast.innerHTML = `<svg class="w-4 h-4 text-absent shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M6 18L18 6M6 6l12 12"/></svg><span>${escapeHtml(message)}</span>`;
+        } else if (type === "warning") {
+          toast.classList.add("border-late/30");
+          toast.innerHTML = `<svg class="w-4 h-4 text-late shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg><span>${escapeHtml(message)}</span>`;
+        } else {
+          toast.classList.add("border-line");
+          toast.innerHTML = `<svg class="w-4 h-4 text-muted shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg><span>${escapeHtml(message)}</span>`;
+        }
+
+        container.appendChild(toast);
+        requestAnimationFrame(() => {
+          toast.classList.remove("translate-y-2", "opacity-0");
+        });
+
+        setTimeout(() => {
+          toast.classList.add("opacity-0", "translate-y-2");
+          setTimeout(() => toast.remove(), 300);
+        }, 4000);
+      }
+
+      function escapeHtml(string) {
+        const div = document.createElement("div");
+        div.innerText = string;
+        return div.innerHTML;
+      }
+
+      // --- EVENT LISTENERS & INITIALIZATION ---
+      document.addEventListener("DOMContentLoaded", () => {
+        // 1. Initial Render
+        render();
+
+        // 2. Settings Management (collapsible; starts hidden every visit)
+        const configPanel = document.getElementById("config-panel");
+        const configBody = document.getElementById("config-body");
+        const scannerBody = document.getElementById("scanner-body");
+
+        function setConfigOpen(open) {
+          configBody.classList.toggle("hidden", !open);
+          document
+            .querySelectorAll('[aria-controls="config-body"]')
+            .forEach((b) => b.setAttribute("aria-expanded", String(open)));
+        }
+
+        function setScannerOpen(open) {
+          scannerBody.classList.toggle("hidden", !open);
+          document
+            .getElementById("btn-scanner-toggle")
+            .setAttribute("aria-expanded", String(open));
+        }
+
+        document
+          .getElementById("btn-toggle-config")
+          .addEventListener("click", () => {
+            const opening = configBody.classList.contains("hidden");
+            setConfigOpen(opening);
+            if (opening) {
+              configPanel.scrollIntoView({
+                behavior: "smooth",
+                block: "nearest",
+              });
+            }
+          });
+
+        document
+          .getElementById("btn-config-header")
+          .addEventListener("click", () =>
+            setConfigOpen(configBody.classList.contains("hidden")),
+          );
+
+        document
+          .getElementById("btn-scanner-toggle")
+          .addEventListener("click", () =>
+            setScannerOpen(scannerBody.classList.contains("hidden")),
+          );
+
+        document
+          .getElementById("toggle-key-visibility")
+          .addEventListener("click", () => {
+            const input = document.getElementById("input-api-key");
+            input.type = input.type === "password" ? "text" : "password";
+          });
+
+        document
+          .getElementById("btn-save-settings")
+          .addEventListener("click", () => {
+            state.settings.apiKey = document
+              .getElementById("input-api-key")
+              .value.trim();
+            state.settings.totalWeeks = Math.max(
+              1,
+              parseInt(document.getElementById("input-total-weeks").value) ||
+                15,
+            );
+            state.settings.targetPercentage = Math.min(
+              100,
+              Math.max(
+                1,
+                parseInt(
+                  document.getElementById("input-target-percentage").value,
+                ) || 75,
+              ),
+            );
+
+            saveState();
+            showToast("Settings saved successfully", "success");
+          });
+
+        // Recalculate add modal semester total when weekly classes change
+        document
+          .getElementById("add-subject-weekly")
+          .addEventListener("input", (e) => {
+            const weekly = parseInt(e.target.value) || 0;
+            const weeks = parseInt(state.settings.totalWeeks) || 15;
+            document.getElementById("add-subject-expected").value =
+              weekly * weeks;
+          });
+
+        // 3. Timetable Image Events
+        const fileInput = document.getElementById("timetable-input");
+        const dropArea = document.getElementById("drop-area");
+
+        fileInput.addEventListener("change", (e) => {
+          if (e.target.files && e.target.files[0]) {
+            handleImageFile(e.target.files[0]);
+          }
+        });
+
+        ["dragenter", "dragover"].forEach((eventName) => {
+          dropArea.addEventListener(
+            eventName,
+            (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              dropArea.classList.add("drop-active");
+            },
+            false,
+          );
+        });
+
+        ["dragleave", "drop"].forEach((eventName) => {
+          dropArea.addEventListener(
+            eventName,
+            (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              dropArea.classList.remove("drop-active");
+            },
+            false,
+          );
+        });
+
+        dropArea.addEventListener("drop", (e) => {
+          if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+            handleImageFile(e.dataTransfer.files[0]);
+          }
+        });
+
+        document
+          .getElementById("btn-cancel-preview")
+          .addEventListener("click", clearImageUpload);
+        document
+          .getElementById("btn-analyze-ai")
+          .addEventListener("click", analyzeTimetableImage);
+
+        // 4. Modals and Forms
+        document
+          .getElementById("btn-open-add-modal")
+          .addEventListener("click", openAddModal);
+        document
+          .getElementById("btn-empty-add")
+          .addEventListener("click", openAddModal);
+
+        document.querySelectorAll(".modal-close").forEach((btn) => {
+          btn.addEventListener("click", closeAllModals);
+        });
+
+        // Close a modal by clicking its scrim
+        document.querySelectorAll("#modal-add, #modal-edit").forEach((m) => {
+          m.addEventListener("mousedown", (e) => {
+            if (e.target === m) closeAllModals();
+          });
+        });
+
+        // Form Add Submit
+        document
+          .getElementById("form-add-subject")
+          .addEventListener("submit", (e) => {
+            e.preventDefault();
+            const name = document
+              .getElementById("add-subject-name")
+              .value.trim();
+            const weekly =
+              parseInt(document.getElementById("add-subject-weekly").value) ||
+              1;
+            const expected =
+              parseInt(document.getElementById("add-subject-expected").value) ||
+              weekly * state.settings.totalWeeks;
+
+            if (!name) return;
+
+            state.subjects.push({
+              id:
+                "sub_" +
+                Date.now() +
+                "_" +
+                Math.random().toString(36).substr(2, 5),
+              name: name,
+              weeklyClasses: weekly,
+              expectedTotal: expected,
+              attended: 0,
+              missed: 0,
+              cancelled: 0,
+            });
+
+            saveState();
+            closeAllModals();
+            showToast(`Subject "${name}" created`, "success");
+          });
+
+        // Form Edit Submit
+        document
+          .getElementById("form-edit-subject")
+          .addEventListener("submit", (e) => {
+            e.preventDefault();
+            const id = document.getElementById("edit-subject-id").value;
+            const sub = state.subjects.find((s) => s.id === id);
+            if (!sub) return;
+
+            sub.name = document
+              .getElementById("edit-subject-name")
+              .value.trim();
+            sub.weeklyClasses = Math.max(
+              1,
+              parseInt(document.getElementById("edit-subject-weekly").value) ||
+                1,
+            );
+            sub.expectedTotal = Math.max(
+              1,
+              parseInt(
+                document.getElementById("edit-subject-expected").value,
+              ) || 1,
+            );
+            sub.attended = Math.max(
+              0,
+              parseInt(
+                document.getElementById("edit-subject-attended").value,
+              ) || 0,
+            );
+            sub.missed = Math.max(
+              0,
+              parseInt(document.getElementById("edit-subject-missed").value) ||
+                0,
+            );
+            sub.cancelled = Math.max(
+              0,
+              parseInt(
+                document.getElementById("edit-subject-cancelled").value,
+              ) || 0,
+            );
+
+            saveState();
+            closeAllModals();
+            showToast(`Updated "${sub.name}"`, "success");
+          });
+
+        // Delete subject button in Edit modal
+        document
+          .getElementById("btn-delete-subject")
+          .addEventListener("click", () => {
+            const id = document.getElementById("edit-subject-id").value;
+            const index = state.subjects.findIndex((s) => s.id === id);
+            if (index !== -1) {
+              const removed = state.subjects.splice(index, 1)[0];
+              saveState();
+              closeAllModals();
+              showToast(`Deleted "${removed.name}"`, "info");
+            }
+          });
+
+        // Search Filter
+        document
+          .getElementById("input-search")
+          .addEventListener("input", (e) => {
+            searchTerm = e.target.value;
+            render();
+          });
+
+        // Backup Export / Import
+        document
+          .getElementById("btn-export")
+          .addEventListener("click", exportBackup);
+        document
+          .getElementById("file-import")
+          .addEventListener("change", (e) => {
+            if (e.target.files && e.target.files[0]) {
+              importBackup(e.target.files[0]);
+              e.target.value = "";
+            }
+          });
+
+        // Close modal on Escape
+        window.addEventListener("keydown", (e) => {
+          if (e.key === "Escape") closeAllModals();
+        });
+      });
+    </script>
+  </body>
+</html>
+
+</html>
