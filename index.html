@@ -506,9 +506,10 @@
             </h2>
             <p class="text-sm text-muted mt-0.5">
               Upload a photo or screenshot of your weekly schedule — the AI
-              extracts each course and its expected semester load. A successful
-              scan <span class="text-absent">replaces your current course
-              list</span>.
+              extracts each course and its expected semester load, then
+              double-checks it with a second recount. Nothing changes until you
+              review the list and confirm (applying
+              <span class="text-absent">replaces your current course list</span>).
             </p>
           </div>
           <div
@@ -691,6 +692,65 @@
         </button>
       </div>
     </main>
+
+    <!-- MODAL: SCAN REVIEW (confirm extracted courses before applying) -->
+    <div
+      id="modal-scan-review"
+      class="fixed inset-0 z-50 bg-ground/80 flex items-center justify-center p-4 hidden"
+    >
+      <div
+        class="bg-surface border border-line rounded-2xl w-full max-w-md p-6 shadow-2xl"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="modal-review-title"
+      >
+        <div class="flex items-center justify-between gap-3">
+          <h3 id="modal-review-title" class="text-base font-semibold text-ink">
+            Review extracted courses
+          </h3>
+          <button
+            class="modal-close h-9 w-9 grid place-items-center rounded-full text-faint hover:text-ink hover:bg-raised transition -mr-2"
+            aria-label="Close"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="1.5"
+                d="M6 18L18 6M6 6l12 12"
+              />
+            </svg>
+          </button>
+        </div>
+        <p class="mt-1.5 text-xs text-faint leading-relaxed">
+          Every count below was double-checked by a second AI read of the
+          grid. Fix anything it still got wrong, then apply. Applying
+          <span class="text-absent">replaces your current course list</span>.
+        </p>
+
+        <div
+          id="scan-review-body"
+          class="mt-3 max-h-80 overflow-y-auto -mx-1 px-1"
+        ></div>
+
+        <div
+          class="pt-4 border-t border-line flex justify-end gap-2"
+        >
+          <button
+            id="btn-scan-discard"
+            class="h-9 px-4 rounded-full bg-raised hover:bg-line text-sm text-ink transition"
+          >
+            Cancel
+          </button>
+          <button
+            id="btn-scan-apply"
+            class="h-9 px-4 rounded-full bg-cream text-ground text-sm font-semibold hover:bg-ink transition"
+          >
+            Apply timetable
+          </button>
+        </div>
+      </div>
+    </div>
 
     <!-- TOASTS -->
     <div
@@ -1414,7 +1474,10 @@
         btnAnalyze.classList.add("opacity-50", "cursor-not-allowed");
 
         const promptText =
-          'Analyze this college timetable. Extract all unique subjects/courses. Count how many times each subject occurs per week. Return ONLY a valid JSON array of objects with this exact structure: [{"subject": "Subject Name", "weeklyClasses": number}]. Do not include markdown formatting or backticks in the response.';
+          'Analyze this college timetable image. It is a weekly grid: each day column lists subject codes/names in time-slot cells. 1) Identify EVERY unique subject across all day columns and all rows, even ones appearing a single time. 2) For each subject, count the TOTAL number of cells containing it across the whole weekly grid: count cell by cell, day by day, then recount your totals before answering. A subject appearing on several days must sum to the count of all its cells (e.g. 2 cells on Mon + 2 on Wed + 3 on Fri = 7/week). Do not report the number of days it appears unless each day has exactly one cell. 3) Return ONLY a valid JSON array of objects with this exact structure: [{"subject": "Subject Name or Code as printed", "weeklyClasses": total cell count}]. Do not include markdown formatting or backticks in the response.';
+
+        const auditPromptText =
+          'You previously extracted subjects from this weekly timetable image, but the counts may be inaccurate. Recount the ENTIRE weekly grid cell by cell, verify or correct every weeklyClasses value, and add any subject that was missed (including ones appearing only once). Return ONLY a valid JSON array covering ALL subjects with corrected counts: [{"subject": "Subject Name or Code as printed", "weeklyClasses": total cell count}]. Do not include markdown formatting or backticks. Here is the earlier extraction: ';
 
         const payload = {
           contents: [
@@ -1528,53 +1591,78 @@
           }
 
           const extractedCourses = parsedCourses;
-          const totalWeeks = Number(state.settings.totalWeeks) || 15;
 
-          // Deduplicate the extracted list (case-insensitive), then replace
-          // the current course list entirely — previous subjects are
-          // auto-deleted when the scanner produces a new timetable.
-          const seen = new Set();
-          const freshCourses = [];
-          extractedCourses.forEach((item) => {
-            if (!item.subject) return;
-            const name = String(item.subject).trim();
-            if (!name) return;
-            const key = name.toLowerCase();
-            if (seen.has(key)) return;
-            seen.add(key);
-            const weekly = Number(item.weeklyClasses) || 1;
-            freshCourses.push({
-              id:
-                "sub_" +
-                Date.now() +
-                "_" +
-                Math.random().toString(36).substr(2, 5),
-              name: name,
-              weeklyClasses: weekly,
-              expectedTotal: weekly * totalWeeks,
-              attended: 0,
-              missed: 0,
-              cancelled: 0,
-            });
-          });
+          // --- VERIFICATION PASS: a second AI read recounts the grid ---
+          const auditPayload = {
+            contents: [
+              {
+                parts: [
+                  {
+                    text:
+                      auditPromptText + JSON.stringify(extractedCourses),
+                  },
+                  {
+                    inline_data: {
+                      mime_type: currentUploadedMimeType || "image/jpeg",
+                      data: currentUploadedImageBase64,
+                    },
+                  },
+                ],
+              },
+            ],
+          };
 
-          if (freshCourses.length === 0) {
+          let verifiedCourses = null;
+          let verifiedByModel = null;
+          for (const model of GEMINI_MODELS) {
+            try {
+              statusText.innerText = `Double-checking with ${model}…`;
+              const response = await fetch(
+                `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(auditPayload),
+                },
+              );
+              if (!response.ok) {
+                const errData = await response.json().catch(() => ({}));
+                throw new Error(
+                  errData.error?.message ||
+                    `HTTP ${response.status}: ${response.statusText}`,
+                );
+              }
+              const data = await response.json();
+              const candidate = data.candidates?.[0];
+              let rawText = candidate?.content?.parts?.[0]?.text || "";
+              rawText = rawText
+                .replace(/```json/gi, "")
+                .replace(/```/g, "")
+                .trim();
+              const verified = JSON.parse(rawText);
+              if (!Array.isArray(verified) || verified.length === 0) {
+                throw new Error("Verification returned no subjects.");
+              }
+              verifiedCourses = verified;
+              verifiedByModel = model;
+              break;
+            } catch (auditErr) {
+              console.warn(
+                `Verification with ${model} failed:`,
+                auditErr.message,
+              );
+            }
+          }
+
+          // Merge both passes into an editable draft. Nothing is applied
+          // yet — the review modal lets the user fix counts first.
+          const draft = buildReviewDraft(extractedCourses, verifiedCourses);
+          if (draft.length === 0) {
             throw new Error(
               "No valid subject objects found in timetable image.",
             );
           }
-
-          const previousCount = state.subjects.length;
-          state.subjects = freshCourses;
-
-          saveState();
-          showToast(
-            previousCount > 0
-              ? `Timetable applied: ${previousCount} previous course${previousCount === 1 ? "" : "s"} deleted, ${freshCourses.length} added.`
-              : `Timetable applied: ${freshCourses.length} course${freshCourses.length === 1 ? "" : "s"} added.`,
-            "success",
-          );
-          clearImageUpload();
+          openScanReview(draft, verifiedByModel !== null);
         } catch (err) {
           console.error("Gemini API Error:", err);
           showToast(
@@ -1587,6 +1675,141 @@
           btnAnalyze.disabled = false;
           btnAnalyze.classList.remove("opacity-50", "cursor-not-allowed");
         }
+      }
+
+      // --- SCAN REVIEW (editable confirmation before applying) ---
+      let scanDraft = [];
+
+      function buildReviewDraft(first, verified) {
+        const map = new Map();
+        const order = [];
+        (first || []).forEach((item) => {
+          if (!item || !item.subject) return;
+          const name = String(item.subject).trim();
+          if (!name) return;
+          const key = name.toLowerCase();
+          if (map.has(key)) return;
+          map.set(key, {
+            name: name,
+            first: Number(item.weeklyClasses) || 1,
+            audit: null,
+          });
+          order.push(key);
+        });
+        (verified || []).forEach((item) => {
+          if (!item || !item.subject) return;
+          const name = String(item.subject).trim();
+          if (!name) return;
+          const key = name.toLowerCase();
+          if (map.has(key)) {
+            map.get(key).audit = Number(item.weeklyClasses) || 1;
+          } else {
+            map.set(key, {
+              name: name,
+              first: null,
+              audit: Number(item.weeklyClasses) || 1,
+            });
+            order.push(key);
+          }
+        });
+        return order.map((k) => map.get(k));
+      }
+
+      function openScanReview(draft, auditSucceeded) {
+        scanDraft = draft;
+        const body = document.getElementById("scan-review-body");
+
+        body.innerHTML = scanDraft
+          .map((row, i) => {
+            const value = row.audit != null ? row.audit : row.first;
+            let note = "";
+            let noteClass = "text-faint";
+            if (row.audit != null && row.first != null && row.audit !== row.first) {
+              note = `AI recount changed ${row.first} → ${row.audit} — verify this one`;
+              noteClass = "text-late";
+            } else if (row.first == null) {
+              note = "Found on second recount";
+              noteClass = "text-late";
+            }
+            return `
+              <div class="grid grid-cols-[1fr_auto] gap-3 items-center py-2.5 border-b border-line last:border-0">
+                <div class="min-w-0">
+                  <p class="text-sm text-ink truncate" title="${escapeHtml(row.name)}">${escapeHtml(row.name)}</p>
+                  ${note ? `<p class="text-[11px] num mt-0.5 ${noteClass}">${note}</p>` : ""}
+                </div>
+                <input
+                  type="number"
+                  id="scan-weekly-${i}"
+                  min="1"
+                  max="50"
+                  value="${value}"
+                  aria-label="Classes per week"
+                  class="w-20 h-9 text-sm num text-center bg-ground border border-line rounded-lg text-ink focus:border-cream focus:outline-none"
+                />
+              </div>
+            `;
+          })
+          .join("");
+
+        document.getElementById("modal-scan-review").classList.remove("hidden");
+        if (auditSucceeded) {
+          showToast(
+            "Extraction double-checked by a second pass — review before applying.",
+            "info",
+          );
+        } else {
+          showToast(
+            "Extracted. Second recount unavailable — check the counts yourself.",
+            "warning",
+          );
+        }
+      }
+
+      function applyScanReview() {
+        if (scanDraft.length === 0) {
+          closeAllModals();
+          return;
+        }
+
+        const totalWeeks = Number(state.settings.totalWeeks) || 15;
+        const freshCourses = [];
+
+        scanDraft.forEach((row, i) => {
+          const input = document.getElementById(`scan-weekly-${i}`);
+          let weekly = parseInt(input && input.value, 10);
+          if (!Number.isFinite(weekly)) {
+            weekly = row.audit != null ? row.audit : row.first;
+          }
+          weekly = Math.max(1, Math.min(50, weekly));
+          freshCourses.push({
+            id:
+              "sub_" +
+              Date.now() +
+              "_" +
+              Math.random().toString(36).substr(2, 5) +
+              "_" +
+              i,
+            name: row.name,
+            weeklyClasses: weekly,
+            expectedTotal: weekly * totalWeeks,
+            attended: 0,
+            missed: 0,
+            cancelled: 0,
+          });
+        });
+
+        const previousCount = state.subjects.length;
+        state.subjects = freshCourses;
+        saveState();
+        closeAllModals();
+        clearImageUpload();
+        scanDraft = [];
+        showToast(
+          previousCount > 0
+            ? `Timetable applied: ${previousCount} previous course${previousCount === 1 ? "" : "s"} deleted, ${freshCourses.length} added.`
+            : `Timetable applied: ${freshCourses.length} course${freshCourses.length === 1 ? "" : "s"} added.`,
+          "success",
+        );
       }
 
       // --- IMAGE FILE HANDLING ---
@@ -1663,7 +1886,7 @@
 
       function closeAllModals() {
         document
-          .querySelectorAll("#modal-add, #modal-edit")
+          .querySelectorAll("#modal-add, #modal-edit, #modal-scan-review")
           .forEach((m) => m.classList.add("hidden"));
       }
 
@@ -1922,11 +2145,25 @@
         });
 
         // Close a modal by clicking its scrim
-        document.querySelectorAll("#modal-add, #modal-edit").forEach((m) => {
-          m.addEventListener("mousedown", (e) => {
-            if (e.target === m) closeAllModals();
+        document
+          .querySelectorAll("#modal-add, #modal-edit, #modal-scan-review")
+          .forEach((m) => {
+            m.addEventListener("mousedown", (e) => {
+              if (e.target === m) closeAllModals();
+            });
           });
-        });
+
+        // Scan review actions
+        document
+          .getElementById("btn-scan-apply")
+          .addEventListener("click", applyScanReview);
+        document
+          .getElementById("btn-scan-discard")
+          .addEventListener("click", () => {
+            scanDraft = [];
+            closeAllModals();
+            clearImageUpload();
+          });
 
         // Form Add Submit
         document

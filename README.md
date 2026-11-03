@@ -9,7 +9,7 @@ A single-file attendance tracker for college students. Log every class with one 
 ## Features
 
 - **One-click logging** — mark a class Attended, Missed or Cancelled from the course card; percentages, buffers and advisories update instantly.
-- **AI timetable scanner** — drag & drop a schedule screenshot; Google Gemini extracts each course and its weekly count automatically (with automatic fallback through substitute models if one is overloaded).
+- **AI timetable scanner** — drag & drop a schedule screenshot; Google Gemini extracts each course and its weekly count automatically (with automatic fallback through substitute models if one is overloaded), then **a second AI pass recounts the grid** and every number is shown in a review step for you to confirm or correct — nothing replaces your list until you approve it.
 - **Bunk & catch-up math** — tells you how many classes you can skip safely, how many in a row you must attend to recover, and how much semester buffer you have left.
 - **Target-based warnings** — every course is colour-coded against your target percentage (75% by default, configurable).
 - **Backup & restore** — export all data as JSON and import it back on another device or browser.
@@ -29,9 +29,14 @@ A single-file attendance tracker for college students. Log every class with one 
 - *Target attendance %* — usually 75. Everything is measured against this.
 Click **Save settings**. The panel can be collapsed again — it stays tidy on every visit.
 
-**2 · Add your courses, the fast way.** Open the **Timetable scanner**, drop a photo or screenshot of your weekly schedule and click **Extract subjects**. Each course found is added with its weekly count × total weeks as the semester total.
+**2 · Add your courses, the fast way.** Open the **Timetable scanner**, drop a photo or screenshot of your weekly schedule and click **Extract subjects**. The AI reads every course and its weekly count — then a **second pass recounts the entire grid** to catch counting mistakes. The result opens as a **review list**: every course with an editable "classes per week" number, and a flag (amber note) wherever the two AI passes disagreed. Fix anything that still looks wrong and click **Apply timetable**.
 
-> ⚠️ **A successful scan replaces your current course list.** Keep an old timetable's data safe by using **Export** first — the replacement is instant and intentional.
+<details>
+<summary>Why the review step matters</summary>
+
+Vision models are excellent at *reading* a timetable but occasionally mis-**count** repeated cells — say 6/week for a subject that actually appears 7 times. That's why the extraction is never trusted blindly: a second recount runs over the same image, disagreements are flagged for you, and nothing touches your saved courses until you press **Apply**. Cancelling the review discards the scan and leaves your data untouched.
+
+</details>
 
 **3 · Add courses manually (alternative).** **Add subject** → name, classes per week, and semester total (auto-filled as weekly × weeks). Before the semester has started, that's all you need.
 
@@ -73,14 +78,14 @@ Your attendance is **attended ÷ (attended + missed)** — cancelled classes don
 
 - **One file.** `index.html` contains the markup, styling (Tailwind CDN + design tokens) and logic. No build step, no dependencies to install.
 - **Storage.** Everything persists under the localStorage key `attend_iq_master_state_v2`. Clearing site data removes it — export backups regularly.
-- **AI models.** The scanner tries `gemini-flash-latest`, then `gemini-2.5-flash`, `gemini-2.0-flash`, `flash-lite` variants — if one model is overloaded, the next one takes over automatically.
+- **AI models.** The scanner tries `gemini-flash-latest`, then `gemini-2.5-flash`, `gemini-2.0-flash`, `flash-lite` variants — if one model is overloaded, the next one takes over automatically. After a successful extraction, a second model call verifies the counts, and the results open in a review step before anything is saved.
 - **Privacy.** The timetable image you scan is sent to Google's Gemini API (vision) for analysis; the API key is stored in your browser only. Everything else never leaves your device.
 - **Accessibility.** Keyboard-navigable controls, visible focus states, 44px touch targets on touch devices, reduced-motion support.
 
 ## FAQ
 
 **The scanner says "high demand, try again". Should I retry?**
-Just click **Extract subjects** again — the app already tries every substitute model first; the error only appears after all of them are busy.
+Just click **Extract subjects** again — the app already tries every substitute model first (for both the extraction and the verification pass); the error only appears after all of them are busy.
 
 **I cleared my browser data and lost everything.**
 Without an exported JSON backup there is nothing stored elsewhere to restore. Export early, export often.
